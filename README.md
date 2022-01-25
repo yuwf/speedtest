@@ -3,9 +3,11 @@
 
 # 使用案例
 ```
-直接使用宏
+函数名和行号作为测试参数
 SeedTestObject();
+自定义测试参数，第一个参数要求是字面变量或者常量静态区字符串，第二个参数为一个数字
+SpeedTestObject2("HandleMsgFun", msgid);
 
-显示构造测试对象 要求第一个参数必须为字面变量或者静态区的数据
-SpeedTest speedtestobj("HandleMsgFun", msgid);
+直接使用宏，宏会生成一个静态测试数据对象指针
+测试对象会直接使用改指针进行原子操作，效率非常高
 ```

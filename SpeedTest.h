@@ -7,16 +7,19 @@
 
 /* 使用案例
 
-直接使用宏
+函数名和行号作为测试参数
 SeedTestObject();
+自定义测试参数，第一个参数要求是字面变量或者常量静态区字符串，第二个参数为一个数字
+SpeedTestObject2("HandleMsgFun", msgid);
 
-显示构造测试对象 要求第一个参数必须为字面变量或者静态区的数据
-SpeedTest speedtestobj("HandleMsgFun", msgid);
+直接使用宏，宏会生成一个静态测试数据对象指针
+测试对象会直接使用改指针进行原子操作，效率非常高
 
 */
 
 #include <unordered_map>
-#include <boost/thread/mutex.hpp>
+#include <boost/thread/locks.hpp>
+#include <boost/thread/shared_mutex.hpp>
 #include <atomic>
 
 #if defined(_MSC_VER)
@@ -45,35 +48,15 @@ FORCE_INLINE int64_t TSC()
 // 获取CPU微妙的频率
 extern int64_t TSCPerUS();
 
-struct SpeedTestPosition
+
+struct SpeedTestData
 {
-	const char* name = NULL;	// 测试位置名 要求是字面变量
-	int num = 0;				// 测试位置号
-
-	std::size_t hash = 0;		// 构造时直接计算好hash
-
-	SpeedTestPosition(const char* _name_, int _num_) : name(_name_), num(_num_)
-	{
-		if (_name_)
-			hash = std::hash<std::size_t>()((std::size_t)_name_) + std::hash<int>()(num);
-		else
-			hash = std::hash<int>()(num);
-	}
-
-	bool operator == (const SpeedTestPosition& other) const
-	{
-		return name == other.name && num == other.num;
-	}
-};
-
-struct SpeedTestValue
-{
-	SpeedTestValue() {}
-	SpeedTestValue(int times, int64_t tsc, int64_t maxtsc)
+	SpeedTestData() {}
+	SpeedTestData(int times, int64_t tsc, int64_t maxtsc)
 		: calltimes(times), elapsedTSC(tsc), elapsedMaxTSC(maxtsc)
 	{
 	}
-	SpeedTestValue(const SpeedTestValue& other)
+	SpeedTestData(const SpeedTestData& other)
 		: calltimes(other.calltimes.load()), elapsedTSC(other.elapsedTSC.load()), elapsedMaxTSC(other.elapsedMaxTSC.load())
 	{
 	}
@@ -82,7 +65,7 @@ struct SpeedTestValue
 	std::atomic<int64_t> elapsedTSC = { 0 };	// 消耗CPU帧率
 	std::atomic<int64_t> elapsedMaxTSC = { 0 }; // 消耗CPU最大帧率
 
-	SpeedTestValue& operator += (const SpeedTestValue& other)
+	SpeedTestData& operator += (const SpeedTestData& other)
 	{
 		calltimes += other.calltimes;
 		elapsedTSC += other.elapsedTSC;
@@ -93,7 +76,7 @@ struct SpeedTestValue
 		}
 		return *this;
 	}
-	SpeedTestValue& operator = (const SpeedTestValue& other)
+	SpeedTestData& operator = (const SpeedTestData& other)
 	{
 		calltimes = other.calltimes.load();
 		elapsedTSC = other.elapsedTSC.load();
@@ -102,20 +85,35 @@ struct SpeedTestValue
 	}
 };
 
+struct SpeedTestPosition
+{
+	const char* name = NULL;	// 测试位置名 要求是字面变量或者常量静态区数据
+	int num = 0;				// 测试位置号
+
+	SpeedTestPosition(const char* _name_, int _num_) : name(_name_), num(_num_)
+	{
+	}
+
+	bool operator == (const SpeedTestPosition& other) const
+	{
+		return name == other.name && num == other.num;
+	}
+};
 struct SpeedTestPositionHash
 {
-	std::size_t operator()(const SpeedTestPosition& obj) const
+	uintptr_t operator()(const SpeedTestPosition& obj) const
 	{
-		return obj.hash;
+		return (uintptr_t)obj.name;
 	}
 };
 
-typedef std::unordered_map<SpeedTestPosition, SpeedTestValue, SpeedTestPositionHash> SpeedTestPositionMap;
+typedef std::unordered_map<SpeedTestPosition, SpeedTestData*, SpeedTestPositionHash> SpeedTestPositionMap;
 
 class SpeedTestRecord
 {
 public:
-	void Clear(SpeedTestPositionMap& lastdata);
+	// 注册测试点 返回该位置的测试数据
+	SpeedTestData* Reg(const SpeedTestPosition& testpos);
 
 	// 快照数据
 	// 【参数metricsprefix和tags 不要有相关格式禁止的特殊字符 内部不对这两个参数做任何格式转化】
@@ -126,8 +124,6 @@ public:
 	// tags额外添加的标签， 内部产生标签 name:测试名称 num;测试号
 	enum SnapshotType { Json, Influx, Prometheus };
 	std::string Snapshot(SnapshotType type, const std::string& metricsprefix, const std::map<std::string, std::string>& tags = std::map<std::string, std::string>());
-
-	void Add(const SpeedTestPosition& testpos, int64_t tsc);
 
 	void SetRecord(bool b) { brecord = b; }
 
@@ -146,19 +142,33 @@ class SpeedTest
 {
 public:
 	// _name_ 参数必须是一个字面量
-	SpeedTest(const char* _name_, int _index_);
+	SpeedTest(const char* _name_, int _index_);	// 这种方式会查找SpeedTestData 比较慢
+	SpeedTest(SpeedTestData* p);
+
 	~SpeedTest();
 
 protected:
-	int64_t begin_tsc; // CPU频率值
-	SpeedTestPosition testpos;
+	int64_t begin_tsc = 0; // CPU频率值
+	SpeedTestData* pspeedtestdata = NULL;
 };
 
-#define __SpeedTestObjName(line)  speedtestobj_##line
-#define _SpeedTestObjName(line)  __SpeedTestObjName(line)
-#define SpeedTestObjName() _SpeedTestObjName(__LINE__)
+#define ___SpeedTestDataName(line)  speedtestdata_##line
+#define __SpeedTestDataName(line)  ___SpeedTestDataName(line)
+#define _SpeedTestDataName() __SpeedTestDataName(__LINE__)
 
-#define SeedTestObject() \
-	SpeedTest SpeedTestObjName()(__FUNCTION__, __LINE__);
+#define ___SpeedTestObjName(line)  speedtestobj_##line
+#define __SpeedTestObjName(line)  ___SpeedTestObjName(line)
+#define _SpeedTestObjName() __SpeedTestObjName(__LINE__)
+
+#define SpeedTestObject() \
+	static SpeedTestData* _SpeedTestDataName() = g_speedtestrecord.Reg(SpeedTestPosition(__FUNCTION__, __LINE__)); \
+	SpeedTest _SpeedTestObjName()(_SpeedTestDataName());
+	
+#define SpeedTestObject2(_name_, _index_) \
+	static SpeedTestData* _SpeedTestDataName() = g_speedtestrecord.Reg(SpeedTestPosition(_name_, _index_)); \
+	SpeedTest _SpeedTestObjName()(_SpeedTestDataName());
+
+// 写错了 要去掉
+#define SeedTestObject() SpeedTestObject()
 
 #endif
