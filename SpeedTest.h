@@ -148,8 +148,8 @@ public:
 	~SpeedTest();
 
 protected:
-	int64_t begin_tsc = 0; // CPU频率值
 	SpeedTestData* pspeedtestdata = NULL;
+	int64_t begin_tsc = 0; // CPU频率值 定义放到pspeedtestdata后面 防止构造时g_speedtestrecord.Reg影响真正测试的区域
 };
 
 #define ___SpeedTestDataName(line)  speedtestdata_##line

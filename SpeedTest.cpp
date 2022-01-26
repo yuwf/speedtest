@@ -51,7 +51,7 @@ SpeedTestData* SpeedTestRecord::Reg(const SpeedTestPosition& testpos)
 	// 先用共享锁 如果存在直接修改
 	{
 		std::shared_lock<boost::shared_mutex> lock(mutex);
-		auto it = records.find(testpos);
+		auto it = ((const SpeedTestPositionMap&)records).find(testpos); // 显示的调用const的find
 		if (it != records.end())
 		{
 			return it->second;
@@ -144,14 +144,14 @@ std::string SpeedTestRecord::Snapshot(SnapshotType type, const std::string& metr
 }
 
 SpeedTest::SpeedTest(const char* _name_, int _index_)
-	: begin_tsc(TSC())
-	, pspeedtestdata(g_speedtestrecord.Reg(SpeedTestPosition(_name_, _index_)))
+	: pspeedtestdata(g_speedtestrecord.Reg(SpeedTestPosition(_name_, _index_)))
+	, begin_tsc(TSC())
 {
 }
 
 SpeedTest::SpeedTest(SpeedTestData* p)
-	: begin_tsc(TSC())
-	, pspeedtestdata(p)
+	: pspeedtestdata(p)
+	, begin_tsc(TSC())
 {
 }
 
