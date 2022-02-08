@@ -1,43 +1,7 @@
-﻿#include "SpeedTest.h"
-#include <chrono>
+﻿#include <chrono>
 #include <iosfwd>
-
-int64_t TSCPerUS()
-{
-	static int64_t CyclesPerMicroSecond;
-	if (CyclesPerMicroSecond <= 0)
-	{
-		using namespace std::chrono_literals;
-
-		// 代码预热
-		for (int i = 0; i < 100; ++i)
-		{
-			(void)std::chrono::high_resolution_clock::now();
-			TSC();
-		}
-
-		// 计算 rdtscp 指令使用的时钟频率
-		auto start = std::chrono::high_resolution_clock::now();
-		int64_t c1 = TSC();
-		std::this_thread::sleep_for(1ms);
-		auto end = std::chrono::high_resolution_clock::now();
-		int64_t c2 = TSC();
-		int64_t elapsed = std::chrono::duration<int64_t, std::nano>(end - start).count();
-		if (elapsed <= 0)
-		{
-			elapsed = 2500000;
-		}
-		int64_t n = c2 - c1;
-		int64_t tmp = n * 1000 / elapsed;
-		if (tmp <= 1000)
-		{
-			tmp = 1000;
-		}
-
-		CyclesPerMicroSecond = tmp;
-	}
-	return CyclesPerMicroSecond;
-}
+#include "SpeedTest.h"
+#include "Clock.h"
 
 SpeedTestRecord g_speedtestrecord;
 
