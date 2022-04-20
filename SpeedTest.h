@@ -138,6 +138,12 @@ protected:
 	SpeedTest _SpeedTestObjName()(_SpeedTestDataName());
 	
 #define SpeedTestObject2(_name_, _index_) \
+	SpeedTestData* _SpeedTestDataName() = g_speedtestrecord.Reg(SpeedTestPosition(_name_, _index_)); \
+	SpeedTest _SpeedTestObjName()(_SpeedTestDataName());
+
+// 优化速度使用
+// 注意：参数 _name_ 和 _index_ 必须是固定值
+#define SpeedTestObjectFixParam(_name_, _index_) \
 	static SpeedTestData* _SpeedTestDataName() = g_speedtestrecord.Reg(SpeedTestPosition(_name_, _index_)); \
 	SpeedTest _SpeedTestObjName()(_SpeedTestDataName());
 

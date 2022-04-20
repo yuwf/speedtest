@@ -16,7 +16,7 @@ SpeedTestData* SpeedTestRecord::Reg(const SpeedTestPosition& testpos)
 	{
 		std::shared_lock<boost::shared_mutex> lock(mutex);
 		auto it = ((const SpeedTestPositionMap&)records).find(testpos); // 显示的调用const的find
-		if (it != records.end())
+		if (it != records.cend())
 		{
 			return it->second;
 		}
