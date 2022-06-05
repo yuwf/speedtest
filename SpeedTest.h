@@ -18,9 +18,14 @@ SpeedTestObject2("HandleMsgFun", msgid);
 */
 
 #include <unordered_map>
+#include <atomic>
+
+#if __cplusplus >= 201703L || _MSVC_LANG >= 201402L
+#include <shared_mutex>
+#else
 #include <boost/thread/locks.hpp>
 #include <boost/thread/shared_mutex.hpp>
-#include <atomic>
+#endif
 
 struct SpeedTestData
 {
@@ -90,19 +95,27 @@ public:
 
 	// 快照数据
 	// 【参数metricsprefix和tags 不要有相关格式禁止的特殊字符 内部不对这两个参数做任何格式转化】
-	// metricsprefix指标名前缀 内部产生指标如下
-	// metricsprefix_calltimes 调用次数
-	// metricsprefix_elapse 耗时 微秒
-	// metricsprefix_maxelapse 最大耗时 微秒
+	// metricsprefix指标名前缀 内部产生指标如下，不包括[]
+	// [metricsprefix]speedtest_calltimes 调用次数
+	// [metricsprefix]speedtest_elapse 耗时 微秒
+	// [metricsprefix]speedtest_maxelapse 最大耗时 微秒
 	// tags额外添加的标签， 内部产生标签 name:测试名称 num;测试号
 	enum SnapshotType { Json, Influx, Prometheus };
-	std::string Snapshot(SnapshotType type, const std::string& metricsprefix, const std::map<std::string, std::string>& tags = std::map<std::string, std::string>());
+	std::string Snapshot(SnapshotType type, const std::string& metricsprefix = "", const std::map<std::string, std::string>& tags = std::map<std::string, std::string>());
 
 	void SetRecord(bool b) { brecord = b; }
 
 protected:
 	// 记录的测试数据
+#if __cplusplus >= 201703L || _MSVC_LANG >= 201402L
+	std::shared_mutex mutex;
+	typedef std::shared_lock<std::shared_mutex> read_lock;
+	typedef std::unique_lock<std::shared_mutex> write_lock;
+#else
 	boost::shared_mutex mutex;
+	typedef boost::shared_lock<boost::shared_mutex> read_lock;
+	typedef boost::unique_lock<boost::shared_mutex> write_lock;
+#endif
 	SpeedTestPositionMap records;
 
 	// 是否记录测试数据
@@ -141,10 +154,14 @@ protected:
 	SpeedTestData* _SpeedTestDataName() = g_speedtestrecord.Reg(SpeedTestPosition(_name_, _index_)); \
 	SpeedTest _SpeedTestObjName()(_SpeedTestDataName());
 
-// 优化速度使用
+// FixParam优化速度使用
 // 注意：参数 _name_ 和 _index_ 必须是固定值
 #define SpeedTestObjectFixParam(_name_, _index_) \
 	static SpeedTestData* _SpeedTestDataName() = g_speedtestrecord.Reg(SpeedTestPosition(_name_, _index_)); \
+	SpeedTest _SpeedTestObjName()(_SpeedTestDataName());
+
+#define SpeedTestObjectThreadFixParam(_name_, _index_) \
+	static thread_local SpeedTestData* _SpeedTestDataName() = g_speedtestrecord.Reg(SpeedTestPosition(_name_, _index_)); \
 	SpeedTest _SpeedTestObjName()(_SpeedTestDataName());
 
 // 写错了 要去掉

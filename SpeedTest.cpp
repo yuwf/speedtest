@@ -14,7 +14,7 @@ SpeedTestData* SpeedTestRecord::Reg(const SpeedTestPosition& testpos)
 	}
 	// 先用共享锁 如果存在直接修改
 	{
-		std::shared_lock<boost::shared_mutex> lock(mutex);
+		read_lock lock(mutex);
 		auto it = ((const SpeedTestPositionMap&)records).find(testpos); // 显示的调用const的find
 		if (it != records.cend())
 		{
@@ -26,7 +26,7 @@ SpeedTestData* SpeedTestRecord::Reg(const SpeedTestPosition& testpos)
 	SpeedTestData* p = new SpeedTestData;
 	// 使用写锁
 	{
-		boost::unique_lock<boost::shared_mutex> lock(mutex);
+		write_lock lock(mutex);
 		records.insert(std::make_pair(testpos, p));
 	}
 	return p;
@@ -36,9 +36,12 @@ std::string SpeedTestRecord::Snapshot(SnapshotType type, const std::string& metr
 {
 	SpeedTestPositionMap lastdata;
 	{
-		boost::unique_lock<boost::shared_mutex> lock(mutex);
+		read_lock lock(mutex);
 		lastdata = records;
 	}
+	static const int metirs_num = 3;
+	static const char* metirs[metirs_num] = { "speedtest_calltimes", "speedtest_elapse", "speedtest_maxelapse" };
+
 	std::ostringstream ss;
 	if (type == Json)
 	{
@@ -46,17 +49,22 @@ std::string SpeedTestRecord::Snapshot(SnapshotType type, const std::string& metr
 		int index = 0;
 		for (const auto& it : lastdata)
 		{
-			ss << ((++index) == 1 ? "{" : ",{");
-			for (const auto& t : tags)
+			int64_t value[metirs_num] = { it.second->calltimes, it.second->elapsedTSC / TSCPerUS(), it.second->elapsedMaxTSC / TSCPerUS() };
+			ss << ((++index) == 1 ? "[" : ",[");
+			for (int i = 0; i < metirs_num; ++i)
 			{
-				ss << "\"" << t.first << "\":\"" << t.second << "\",";
+				ss << (i == 0 ? "{" : ",{");
+				ss << "\"metrics\":\"" << metricsprefix << metirs[i] << "\",";
+				ss << "\"name\":\"" << it.first.name << "\",";
+				ss << "\"num\":" << it.first.num << ",";
+				for (const auto& it : tags)
+				{
+					ss << "\"" << it.first << "\":\"" << it.second << "\",";
+				}
+				ss << "\"value\":" << value[i] << "";
+				ss << "}";
 			}
-			ss <<  "\"name\":\"" << it.first.name << "\",";
-			ss <<  "\"num\":" << it.first.num << ",";
-			ss << "\"" << metricsprefix << "_calltimes\":" << it.second->calltimes << ",";
-			ss << "\"" << metricsprefix << "_elapse\":" << (it.second->elapsedTSC / TSCPerUS()) << ",";
-			ss << "\"" << metricsprefix << "_maxelapse\":" << (it.second->elapsedMaxTSC / TSCPerUS());
-			ss << "}";
+			ss << "]";
 		}
 		ss << "]";
 	}
@@ -69,17 +77,13 @@ std::string SpeedTestRecord::Snapshot(SnapshotType type, const std::string& metr
 		}
 		for (const auto& it : lastdata)
 		{
-			ss << metricsprefix << "_calltimes";
-			ss << ",name=" << it.first.name << ",num=" << it.first.num << tag;
-			ss << " value=" << it.second->calltimes << "i\n";
-
-			ss << metricsprefix << "_elapse";
-			ss << ",name=" << it.first.name << ",num=" << it.first.num << tag;
-			ss << " value=" << (it.second->elapsedTSC / TSCPerUS()) << "i\n";
-
-			ss << metricsprefix << "_maxelapse";
-			ss << ",name=" << it.first.name << ",num=" << it.first.num << tag;
-			ss << " value=" << (it.second->elapsedMaxTSC / TSCPerUS()) << "i\n";
+			int64_t value[metirs_num] = { it.second->calltimes, it.second->elapsedTSC / TSCPerUS(), it.second->elapsedMaxTSC / TSCPerUS() };
+			for (int i = 0; i < metirs_num; ++i)
+			{
+				ss << metricsprefix << metirs[i];
+				ss << ",name=" << it.first.name << ",num=" << it.first.num << tag;
+				ss << " value=" << value[i] << "i\n";
+			}
 		}
 	}
 	else if (type == Prometheus)
@@ -91,17 +95,13 @@ std::string SpeedTestRecord::Snapshot(SnapshotType type, const std::string& metr
 		}
 		for (const auto& it : lastdata)
 		{
-			ss << metricsprefix << "_calltimes";
-			ss << "{name=\"" << it.first.name << "\",num=\"" << it.first.num << "\"" << tag << "}";
-			ss << " " << it.second->calltimes << "\n";
-
-			ss << metricsprefix << "_elapse";
-			ss << "{name=\"" << it.first.name << "\",num=\"" << it.first.num << "\"" << tag << "}";
-			ss << " " << (it.second->elapsedTSC / TSCPerUS()) << "\n";
-
-			ss << metricsprefix << "_maxelapse";
-			ss << "{name=\"" << it.first.name << "\",num=\"" << it.first.num << "\"" << tag << "}";
-			ss << " " << (it.second->elapsedMaxTSC / TSCPerUS()) << "\n";
+			int64_t value[metirs_num] = { it.second->calltimes, it.second->elapsedTSC / TSCPerUS(), it.second->elapsedMaxTSC / TSCPerUS() };
+			for (int i = 0; i < metirs_num; ++i)
+			{
+				ss << metricsprefix << metirs[i];
+				ss << "{name=\"" << it.first.name << "\",num=\"" << it.first.num << "\"" << tag << "}";
+				ss << " " << value[i] << "\n";
+			}
 		}
 	}
 	return ss.str();
