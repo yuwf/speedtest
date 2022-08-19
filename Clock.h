@@ -1,7 +1,7 @@
 ﻿#ifndef _CLOCK_H_
 #define _CLOCK_H_
 
-// by yuwf qingting.water@gmail.com
+// by git@github.com:yuwf/clock.git
 
 // 时钟
 #include <stdlib.h>
@@ -17,6 +17,12 @@
 #else
 #define	FORCE_INLINE inline __attribute__((always_inline))
 #endif
+
+// https://github.com/gcc-mirror/gcc/blob/master/gcc/config/i386/ia32intrin.h
+// https://msdn.microsoft.com/en-us/library/twchhe95%28v=vs.100%29.aspx
+// https://gcc.gnu.org/onlinedocs/gcc/Machine-Constraints.html
+// https://en.wikipedia.org/wiki/Time_Stamp_Counter
+// https://msdn.microsoft.com/en-us/library/bb385235.aspx
 
 // 获取CPU当前频率值
 FORCE_INLINE int64_t TSC()

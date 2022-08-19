@@ -1,7 +1,7 @@
 ﻿#ifndef _SPEEDTEST_H_
 #define _SPEEDTEST_H_
 
-// by yuwf qingting.water@gmail.com
+// by git@github.com:yuwf/speedtest.git
 
 // 区域块性能监控，支持监控数据快照
 
@@ -150,7 +150,7 @@ protected:
 	static SpeedTestData* _SpeedTestDataName() = g_speedtestrecord.Reg(SpeedTestPosition(__FUNCTION__, __LINE__)); \
 	SpeedTest _SpeedTestObjName()(_SpeedTestDataName());
 	
-#define SpeedTestObject2(_name_, _index_) \
+#define SpeedTestObjectParam(_name_, _index_) \
 	SpeedTestData* _SpeedTestDataName() = g_speedtestrecord.Reg(SpeedTestPosition(_name_, _index_)); \
 	SpeedTest _SpeedTestObjName()(_SpeedTestDataName());
 
@@ -163,8 +163,5 @@ protected:
 #define SpeedTestObjectThreadFixParam(_name_, _index_) \
 	static thread_local SpeedTestData* _SpeedTestDataName() = g_speedtestrecord.Reg(SpeedTestPosition(_name_, _index_)); \
 	SpeedTest _SpeedTestObjName()(_SpeedTestDataName());
-
-// 写错了 要去掉
-#define SeedTestObject() SpeedTestObject()
 
 #endif
