@@ -17,52 +17,26 @@ SpeedTestObject2("HandleMsgFun", msgid);
 
 */
 
+#include <string>
+#include <map>
 #include <unordered_map>
 #include <atomic>
 
-#if __cplusplus >= 201703L || _MSVC_LANG >= 201402L
-#include <shared_mutex>
-#else
-#include <boost/thread/locks.hpp>
-#include <boost/thread/shared_mutex.hpp>
-#endif
+// 需要依赖Clock git@github.com:yuwf/clock.git
+#include "Clock.h"
 
+// 需要依赖Locker git@github.com:yuwf/locker.git
+#include "Locker.h"
+
+// 测试数据
 struct SpeedTestData
 {
-	SpeedTestData() {}
-	SpeedTestData(int times, int64_t tsc, int64_t maxtsc)
-		: calltimes(times), elapsedTSC(tsc), elapsedMaxTSC(maxtsc)
-	{
-	}
-	SpeedTestData(const SpeedTestData& other)
-		: calltimes(other.calltimes.load()), elapsedTSC(other.elapsedTSC.load()), elapsedMaxTSC(other.elapsedMaxTSC.load())
-	{
-	}
-
 	std::atomic<int64_t> calltimes = { 0 };		// 调用次数
 	std::atomic<int64_t> elapsedTSC = { 0 };	// 消耗CPU帧率
 	std::atomic<int64_t> elapsedMaxTSC = { 0 }; // 消耗CPU最大帧率
-
-	SpeedTestData& operator += (const SpeedTestData& other)
-	{
-		calltimes += other.calltimes;
-		elapsedTSC += other.elapsedTSC;
-		int64_t tsc = other.elapsedMaxTSC.load();
-		if (elapsedMaxTSC < tsc)
-		{
-			elapsedMaxTSC = tsc;
-		}
-		return *this;
-	}
-	SpeedTestData& operator = (const SpeedTestData& other)
-	{
-		calltimes = other.calltimes.load();
-		elapsedTSC = other.elapsedTSC.load();
-		elapsedMaxTSC = other.elapsedMaxTSC.load();
-		return *this;
-	}
 };
 
+// 测试位置
 struct SpeedTestPosition
 {
 	const char* name = NULL;	// 测试位置名 要求是字面变量或者常量静态区数据
@@ -71,22 +45,20 @@ struct SpeedTestPosition
 	SpeedTestPosition(const char* _name_, int _num_) : name(_name_), num(_num_)
 	{
 	}
-
 	bool operator == (const SpeedTestPosition& other) const
 	{
 		return name == other.name && num == other.num;
 	}
-};
-struct SpeedTestPositionHash
-{
-	uintptr_t operator()(const SpeedTestPosition& obj) const
+	struct Hash
 	{
-		return (uintptr_t)obj.name;
-	}
+		uintptr_t operator()(const SpeedTestPosition& obj) const
+		{
+			return (uintptr_t)obj.name;
+		}
+	};
 };
 
-typedef std::unordered_map<SpeedTestPosition, SpeedTestData*, SpeedTestPositionHash> SpeedTestPositionMap;
-
+// 测试数据记录
 class SpeedTestRecord
 {
 public:
@@ -107,15 +79,8 @@ public:
 
 protected:
 	// 记录的测试数据
-#if __cplusplus >= 201703L || _MSVC_LANG >= 201402L
-	std::shared_mutex mutex;
-	typedef std::shared_lock<std::shared_mutex> read_lock;
-	typedef std::unique_lock<std::shared_mutex> write_lock;
-#else
-	boost::shared_mutex mutex;
-	typedef boost::shared_lock<boost::shared_mutex> read_lock;
-	typedef boost::unique_lock<boost::shared_mutex> write_lock;
-#endif
+	typedef std::unordered_map<SpeedTestPosition, SpeedTestData*, SpeedTestPosition::Hash> SpeedTestPositionMap;
+	shared_mutex mutex;
 	SpeedTestPositionMap records;
 
 	// 是否记录测试数据
@@ -128,10 +93,30 @@ class SpeedTest
 {
 public:
 	// _name_ 参数必须是一个字面量
-	SpeedTest(const char* _name_, int _index_);	// 这种方式会查找SpeedTestData 比较慢
-	SpeedTest(SpeedTestData* p);
+	SpeedTest(const char* _name_, int _num_)	// 这种方式会查找SpeedTestData 比较慢
+		: pspeedtestdata(g_speedtestrecord.Reg(SpeedTestPosition(_name_, _num_)))
+		, begin_tsc(TSC())
+	{
+	}
+	SpeedTest(SpeedTestData* p)
+		: pspeedtestdata(p)
+		, begin_tsc(TSC())
+	{
+	}
 
-	~SpeedTest();
+	~SpeedTest()
+	{
+		if (pspeedtestdata)
+		{
+			int64_t tsc = TSC() - begin_tsc;
+			pspeedtestdata->calltimes++;
+			pspeedtestdata->elapsedTSC += tsc;
+			if (pspeedtestdata->elapsedMaxTSC < tsc)
+			{
+				pspeedtestdata->elapsedMaxTSC = tsc;
+			}
+		}
+	}
 
 protected:
 	SpeedTestData* pspeedtestdata = NULL;
@@ -146,22 +131,20 @@ protected:
 #define __SpeedTestObjName(line)  ___SpeedTestObjName(line)
 #define _SpeedTestObjName() __SpeedTestObjName(__LINE__)
 
+// 使用函数名和行号作为参数
 #define SpeedTestObject() \
 	static SpeedTestData* _SpeedTestDataName() = g_speedtestrecord.Reg(SpeedTestPosition(__FUNCTION__, __LINE__)); \
 	SpeedTest _SpeedTestObjName()(_SpeedTestDataName());
-	
-#define SpeedTestObjectParam(_name_, _index_) \
-	SpeedTestData* _SpeedTestDataName() = g_speedtestrecord.Reg(SpeedTestPosition(_name_, _index_)); \
+
+// 带入可变参数
+#define SpeedTestObjectParam(_name_, _num_) \
+	SpeedTestData* _SpeedTestDataName() = g_speedtestrecord.Reg(SpeedTestPosition(_name_, _num_)); \
 	SpeedTest _SpeedTestObjName()(_SpeedTestDataName());
 
 // FixParam优化速度使用
-// 注意：参数 _name_ 和 _index_ 必须是固定值
-#define SpeedTestObjectFixParam(_name_, _index_) \
-	static SpeedTestData* _SpeedTestDataName() = g_speedtestrecord.Reg(SpeedTestPosition(_name_, _index_)); \
-	SpeedTest _SpeedTestObjName()(_SpeedTestDataName());
-
-#define SpeedTestObjectThreadFixParam(_name_, _index_) \
-	static thread_local SpeedTestData* _SpeedTestDataName() = g_speedtestrecord.Reg(SpeedTestPosition(_name_, _index_)); \
+// 注意：参数 _name_ 和 _num_ 必须是固定值，如果不固定，所有的测试数据只会累加到第一次数据上
+#define SpeedTestObjectFixParam(_name_, _num_) \
+	static SpeedTestData* _SpeedTestDataName() = g_speedtestrecord.Reg(SpeedTestPosition(_name_, _num_)); \
 	SpeedTest _SpeedTestObjName()(_SpeedTestDataName());
 
 #endif

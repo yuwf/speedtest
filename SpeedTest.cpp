@@ -1,7 +1,6 @@
 ﻿#include <chrono>
 #include <iosfwd>
 #include "SpeedTest.h"
-#include "Clock.h"
 
 SpeedTestRecord g_speedtestrecord;
 
@@ -14,7 +13,7 @@ SpeedTestData* SpeedTestRecord::Reg(const SpeedTestPosition& testpos)
 	}
 	// 先用共享锁 如果存在直接修改
 	{
-		read_lock lock(mutex);
+		READ_LOCK(mutex);
 		auto it = ((const SpeedTestPositionMap&)records).find(testpos); // 显示的调用const的find
 		if (it != records.cend())
 		{
@@ -26,7 +25,7 @@ SpeedTestData* SpeedTestRecord::Reg(const SpeedTestPosition& testpos)
 	SpeedTestData* p = new SpeedTestData;
 	// 使用写锁
 	{
-		write_lock lock(mutex);
+		WRITE_LOCK(mutex);
 		records.insert(std::make_pair(testpos, p));
 	}
 	return p;
@@ -36,7 +35,7 @@ std::string SpeedTestRecord::Snapshot(SnapshotType type, const std::string& metr
 {
 	SpeedTestPositionMap lastdata;
 	{
-		read_lock lock(mutex);
+		READ_LOCK(mutex);
 		lastdata = records;
 	}
 	static const int metirs_num = 3;
@@ -106,30 +105,3 @@ std::string SpeedTestRecord::Snapshot(SnapshotType type, const std::string& metr
 	}
 	return ss.str();
 }
-
-SpeedTest::SpeedTest(const char* _name_, int _index_)
-	: pspeedtestdata(g_speedtestrecord.Reg(SpeedTestPosition(_name_, _index_)))
-	, begin_tsc(TSC())
-{
-}
-
-SpeedTest::SpeedTest(SpeedTestData* p)
-	: pspeedtestdata(p)
-	, begin_tsc(TSC())
-{
-}
-
-SpeedTest::~SpeedTest()
-{
-	if (pspeedtestdata)
-	{
-		int64_t tsc = TSC() - begin_tsc;
-		pspeedtestdata->calltimes++;
-		pspeedtestdata->elapsedTSC += tsc;
-		if (pspeedtestdata->elapsedMaxTSC < tsc)
-		{
-			pspeedtestdata->elapsedMaxTSC = tsc;
-		}
-	}
-}
-
