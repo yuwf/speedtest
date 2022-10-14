@@ -1,5 +1,5 @@
 # speedtest
-区域块性能监控，支持监控数据快照
+区域块性能监控，支持json、influxdb、prometheus格式的数据快照
 
 # 使用案例
 ```
