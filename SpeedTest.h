@@ -21,6 +21,7 @@ SpeedTestObject2("HandleMsgFun", msgid);
 #include <map>
 #include <unordered_map>
 #include <atomic>
+#include <sstream>
 
 // 需要依赖Clock git@github.com:yuwf/clock.git
 #include "Clock.h"
@@ -95,12 +96,12 @@ public:
 	// _name_ 参数必须是一个字面量
 	SpeedTest(const char* _name_, int _num_)	// 这种方式会查找SpeedTestData 比较慢
 		: pspeedtestdata(g_speedtestrecord.Reg(SpeedTestPosition(_name_, _num_)))
-		, begin_tsc(TSC())
+		, begin_tsc(pspeedtestdata ? TSC() : 0)
 	{
 	}
 	SpeedTest(SpeedTestData* p)
 		: pspeedtestdata(p)
-		, begin_tsc(TSC())
+		, begin_tsc(pspeedtestdata ? TSC() : 0)
 	{
 	}
 
